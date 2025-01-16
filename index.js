@@ -49,9 +49,12 @@ async function run() {
 
 
  app.get('/users' ,async(req , res) =>{
+  const email = req.query.email
+  const query ={email :email}
+    const result = await userCollection.find(query).toArray()
+  res.send(result)    
+              
 
-            const result = await userCollection.find().toArray()
-            res.send(result)
   })
 
 
@@ -70,8 +73,9 @@ async function run() {
         })
 
   app.get('/tasks' ,async(req , res) =>{
-
-    const result = await taskCollection.find().toArray()
+    const email = req.query.email
+    const query ={email :email}
+    const result = await taskCollection.find(query).toArray()
     res.send(result)
 })
 
