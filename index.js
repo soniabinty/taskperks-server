@@ -29,6 +29,7 @@ async function run() {
 
     const userCollection = client.db('taskDb').collection('user')
     const taskCollection = client.db('taskDb').collection('task')
+    const submissionCollection = client.db('taskDb').collection('submission')
 
 
     // user related apis
@@ -81,7 +82,7 @@ async function run() {
       })
 
 
-      app.get("/alltasks/:id", async (req, res) => {
+      app.get('/alltasks/:id', async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
     const result = await taskCollection.findOne(query);
@@ -106,7 +107,24 @@ app.delete('/tasks/:id', async(req , res) =>{
   res.send(result)
 })
 
+// submission apis
 
+app.post('/submission' , async(req , res) =>{
+  const submission = req.body
+  const result = await submissionCollection.insertOne(submission)
+  res.send(result)
+  
+  
+      })
+
+      app.get("/submission", async (req, res) => {
+        const email = req.query.email;
+        const query = {
+         buyer_email: email,
+        };
+        const result = await submissionCollection.find(query).toArray();
+        res.send(result);
+      });
 
 
     // Send a ping to confirm a successful connection
