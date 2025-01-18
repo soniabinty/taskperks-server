@@ -33,6 +33,48 @@ async function run() {
     const submissionCollection = client.db('taskDb').collection('submission')
 
 
+
+
+    // jwt related apis
+
+app.post('/jwt' , async(req , res) =>{
+  const user = req.body
+  const token = jwt.sign(user , process.env.ACCESS_TOKEN , {
+    expiresIn: '1h'
+  })
+  res.send({token})
+
+})
+
+
+const verifyToken = (req, res, next) => {
+  if (!req.headers.authorization) {
+    return res.status(401).send({ message: "No token provided." });
+  }
+
+  const token = req.headers.authorization.split(' ')[1];
+  jwt.verify(token, process.env.ACCESS_TOKEN, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Invalid or expired token." });
+    }
+    req.decoded = decoded;
+    next();
+  });
+};
+
+
+
+const verifyAdmin = async (req, res, next) => {
+  const email = req.decoded.email; 
+  const query = { email };
+
+  const user = await userCollection.findOne(query);
+  if (user?.role !== 'Admin') {
+    return res.status(403).send({ message: "Forbidden access. Admins only." });
+  }
+  next();
+};
+
     // user related apis
 
 
@@ -50,7 +92,7 @@ async function run() {
           })
 
 
- app.get('/users' ,async(req , res) =>{
+ app.get('/users' ,verifyToken  ,async(req , res) =>{
   const email = req.query.email
   const query ={ email }
     const result = await userCollection.find(query).toArray()
@@ -60,7 +102,7 @@ async function run() {
   })
 
 
-  app.get('/allusers' ,async(req , res) =>{
+  app.get('/allusers',verifyToken ,verifyAdmin,async(req , res) =>{
        
     const result = await userCollection.find().toArray()
     res.send(result)
@@ -68,7 +110,7 @@ async function run() {
 
 
 
-app.delete('/allusers/:id', async(req , res) =>{
+app.delete('/allusers/:id',verifyToken, async(req , res) =>{
   const id = req.params.id
   const query ={ _id : new ObjectId(id)}
 
@@ -78,7 +120,7 @@ app.delete('/allusers/:id', async(req , res) =>{
 
 
 
-app.patch('/allusers/:id', async (req, res) => {
+app.patch('/allusers/:id',verifyToken, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
 
@@ -117,7 +159,7 @@ app.patch('/allusers/:id', async (req, res) => {
     });
 
 
-app.delete('/alltasks/:id', async(req , res) =>{
+app.delete('/alltasks/:id',verifyToken, async(req , res) =>{
   const id = req.params.id
   const query ={ _id : new ObjectId(id)}
 
@@ -127,7 +169,7 @@ app.delete('/alltasks/:id', async(req , res) =>{
 
       
 
-  app.get('/tasks' ,async(req , res) =>{
+  app.get('/tasks' ,verifyToken,async(req , res) =>{
     const email = req.query.email
     const query ={email :email}
     const result = await taskCollection.find(query).toArray()
@@ -135,7 +177,7 @@ app.delete('/alltasks/:id', async(req , res) =>{
 })
 
 
-app.delete('/tasks/:id', async(req , res) =>{
+app.delete('/tasks/:id',verifyToken, async(req , res) =>{
   const id = req.params.id
   const query ={ _id : new ObjectId(id)}
 
@@ -153,7 +195,7 @@ app.post('/submission' , async(req , res) =>{
   
       })
 
-      app.get("/submission", async (req, res) => {
+      app.get("/submission",verifyToken, async (req, res) => {
         const email = req.query.email;
         const query = {
          buyer_email: email,
@@ -163,7 +205,7 @@ app.post('/submission' , async(req , res) =>{
       });
 
 
-   app.patch("/submission/:id", async (req, res) => {
+   app.patch("/submission/:id",verifyToken, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -179,13 +221,13 @@ app.post('/submission' , async(req , res) =>{
       res.send(result);
     });
 
-app.delete("/submission/:id", async (req, res) => {
+app.delete("/submission/:id",verifyToken, async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
   const result = await submissionCollection.deleteOne(query);
   res.send(result);
     });
-app.get("/submission/worker", async (req, res) => {
+app.get("/submission/worker",verifyToken, async (req, res) => {
   const { email, status } = req.query;
 
   const query = {
@@ -199,7 +241,7 @@ app.get("/submission/worker", async (req, res) => {
 
 
 
-app.get("/submission/workeralltask", async (req, res) => {
+app.get("/submission/workeralltask",verifyToken, async (req, res) => {
   const email = req.query.email;
   const query = {
    worker_email: email,
@@ -208,33 +250,24 @@ app.get("/submission/workeralltask", async (req, res) => {
   res.send(result);
     });
 
-// jwt related apis
-
-app.post('/jwt' , async(req , res) =>{
-  const user = req.body
-  const token = jwt.sign(user , process.env.ACCESS_TOKEN , {
-    expiresIn: '1h'
-  })
-  res.send({token})
-
-})
+// role based apis
 
 
-const verifyToken = (req , res , next) =>{
-  console.log(req.headers.authorization)
-  if(!req.headers.authorization){
+app.get('/users/admin/:email', verifyToken, async(req , res) =>{
+  const email= req.params.email
 
-    return   res.status(401).send({ message: "No token provided." });
+  if(email  !== req.decoded.email){
+    return res.status(403).send({message : 'forbidden access'})
   }
-  const token = req.headers.authorization.split(' ')[1]
-jwt.verify(token , process.env.ACCESS_TOKEN ,(err , decoded) =>{
-  if(err){
-    return  res.status(400).send({ message: "Invalid token." });
+  const query ={ email: email}
+
+  const user= await userCollection.findOne(query)
+  let admin = false
+  if(user){
+    admin = user?.role === 'Admin'
   }
-  req.decoded = decoded;
-  next()
+  res.send({admin})
 })
-}
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
