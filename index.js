@@ -2,6 +2,7 @@ const express = require('express')
 const app = express()
 const cors = require ('cors')
 const port = process.env.PORT || 5000
+const jwt = require('jsonwebtoken');
 require('dotenv').config()
 const { MongoClient, ServerApiVersion ,  ObjectId} = require('mongodb');
 
@@ -206,6 +207,34 @@ app.get("/submission/workeralltask", async (req, res) => {
   const result = await submissionCollection.find(query).toArray();
   res.send(result);
     });
+
+// jwt related apis
+
+app.post('/jwt' , async(req , res) =>{
+  const user = req.body
+  const token = jwt.sign(user , process.env.ACCESS_TOKEN , {
+    expiresIn: '1h'
+  })
+  res.send({token})
+
+})
+
+
+const verifyToken = (req , res , next) =>{
+  console.log(req.headers.authorization)
+  if(!req.headers.authorization){
+
+    return   res.status(401).send({ message: "No token provided." });
+  }
+  const token = req.headers.authorization.split(' ')[1]
+jwt.verify(token , process.env.ACCESS_TOKEN ,(err , decoded) =>{
+  if(err){
+    return  res.status(400).send({ message: "Invalid token." });
+  }
+  req.decoded = decoded;
+  next()
+})
+}
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
