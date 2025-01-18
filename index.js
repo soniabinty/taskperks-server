@@ -75,6 +75,18 @@ const verifyAdmin = async (req, res, next) => {
   next();
 };
 
+
+const verifyBuyer = async (req, res, next) => {
+  const email = req.decoded.email; 
+  const query = { email };
+
+  const user = await userCollection.findOne(query);
+  if (user?.role !== 'Buyer') {
+    return res.status(403).send({ message: "Forbidden access. Buyerss only." });
+  }
+  next();
+};
+
     // user related apis
 
 
@@ -102,7 +114,7 @@ const verifyAdmin = async (req, res, next) => {
   })
 
 
-  app.get('/allusers',verifyToken ,verifyAdmin,async(req , res) =>{
+  app.get('/allusers' ,verifyToken,async(req , res) =>{
        
     const result = await userCollection.find().toArray()
     res.send(result)
@@ -110,7 +122,7 @@ const verifyAdmin = async (req, res, next) => {
 
 
 
-app.delete('/allusers/:id',verifyToken, async(req , res) =>{
+app.delete('/allusers/:id',verifyToken, verifyAdmin, async(req , res) =>{
   const id = req.params.id
   const query ={ _id : new ObjectId(id)}
 
@@ -120,7 +132,7 @@ app.delete('/allusers/:id',verifyToken, async(req , res) =>{
 
 
 
-app.patch('/allusers/:id',verifyToken, async (req, res) => {
+app.patch('/allusers/:id',verifyToken,verifyAdmin, async (req, res) => {
   const { id } = req.params;
   const { role } = req.body;
 
@@ -159,7 +171,7 @@ app.patch('/allusers/:id',verifyToken, async (req, res) => {
     });
 
 
-app.delete('/alltasks/:id',verifyToken, async(req , res) =>{
+app.delete('/alltasks/:id',verifyToken,verifyBuyer, async(req , res) =>{
   const id = req.params.id
   const query ={ _id : new ObjectId(id)}
 
@@ -177,7 +189,7 @@ app.delete('/alltasks/:id',verifyToken, async(req , res) =>{
 })
 
 
-app.delete('/tasks/:id',verifyToken, async(req , res) =>{
+app.delete('/tasks/:id',verifyToken,verifyBuyer, async(req , res) =>{
   const id = req.params.id
   const query ={ _id : new ObjectId(id)}
 
@@ -205,7 +217,7 @@ app.post('/submission' , async(req , res) =>{
       });
 
 
-   app.patch("/submission/:id",verifyToken, async (req, res) => {
+   app.patch("/submission/:id",verifyToken,verifyBuyer, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
       const filter = { _id: new ObjectId(id) };
@@ -221,7 +233,7 @@ app.post('/submission' , async(req , res) =>{
       res.send(result);
     });
 
-app.delete("/submission/:id",verifyToken, async (req, res) => {
+app.delete("/submission/:id",verifyToken,verifyBuyer, async (req, res) => {
   const id = req.params.id;
   const query = { _id: new ObjectId(id) };
   const result = await submissionCollection.deleteOne(query);
@@ -267,6 +279,24 @@ app.get('/users/admin/:email', verifyToken, async(req , res) =>{
     admin = user?.role === 'Admin'
   }
   res.send({admin})
+})
+
+
+
+app.get('/users/buyer/:email', verifyToken, async(req , res) =>{
+  const email= req.params.email
+
+  if(email  !== req.decoded.email){
+    return res.status(403).send({message : 'forbidden access'})
+  }
+  const query ={ email: email}
+
+  const user= await userCollection.findOne(query)
+  let buyer = false
+  if(user){
+    buyer = user?.role === 'Buyer'
+  }
+  res.send({buyer})
 })
 
     // Send a ping to confirm a successful connection
