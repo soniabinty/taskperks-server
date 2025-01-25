@@ -34,7 +34,8 @@ async function run() {
     const taskCollection = client.db('taskDb').collection('task')
     const submissionCollection = client.db('taskDb').collection('submission')
     const paymentsCollection = client.db('taskDb').collection('payments')
-
+    const withdrawalsCollection = client.db('taskDb').collection('withdrawals')
+    const notificationCollection = client.db('taskDb').collection('notifications')
 
 
     // jwt related apis
@@ -162,12 +163,13 @@ const verifyWorker = async (req, res, next) => {
                 { email: workerEmail },
                 { $set: { coins: updatedCoins } }
               );
+              res.send(result)
           
-              if (result.modifiedCount > 0) {
-                res.send({ message: 'Worker coins updated successfully' });
-              } else {
-                res.status(400).send({ message: 'Failed to update worker coins' });
-              }
+              // if (result.modifiedCount > 0) {
+              //   res.send({ message: 'Worker coins updat ed successfully' });
+              // } else {
+              //   res.status(400).send({ message: 'Failed to update worker coins' });
+              // }
             } catch (error) {
               console.error(error);
               res.status(500).send({ message: 'Internal Server Error' });
@@ -222,6 +224,7 @@ app.patch('/allusers/:id',verifyToken,verifyAdmin, async (req, res) => {
     res.send(result);
  
 });
+
 
   // task added apis
 
@@ -279,8 +282,31 @@ app.delete('/tasks/:id',verifyToken,verifyBuyer, async(req , res) =>{
 // submission apis
 
 app.post('/submission' , async(req , res) =>{
-  const submission = req.body
+  const submission = req.body 
+  // const submissionNotify = await submissionCollection.findOne({ _id: new ObjectId(id) });
+
+  
+  const {worker_email, buyer_email, worker_name,}= submission
   const result = await submissionCollection.insertOne(submission)
+  if (result.acknowledged) {
+    // Add a notification based on the new status
+
+    let actionRoute = "/dashboard/buyerhome";
+
+   
+      message = `Inserted a new submission by ${worker_name}`;
+  
+
+    const notification = {
+      message,
+      toEmail: buyer_email,
+      actionRoute,
+      time: new Date(),
+    };
+
+    // Insert the notification into the notification collection
+    await notificationCollection.insertOne(notification);
+  }
   res.send(result)
   
   
@@ -308,6 +334,20 @@ app.post('/submission' , async(req , res) =>{
         );
         res.send(result);
       });
+
+  app.patch("/tasks-worker-upgrade/:id", async (req, res) => {
+    const id = req.params.id
+    const filter = { _id: new ObjectId(id) };
+   
+
+
+  const updatedDoc = { $inc: { workers: 1 } };
+    const result = await taskCollection.updateOne(
+      filter,
+      updatedDoc
+    );
+    res.send(result);
+    });
 
 
 
@@ -363,6 +403,12 @@ app.patch('/users_coin/:id', verifyToken, async (req, res) => {
    app.patch("/submission/:id",verifyToken,verifyBuyer, async (req, res) => {
       const id = req.params.id;
       const { status } = req.body;
+      const submission = await submissionCollection.findOne({ _id: new ObjectId(id) });
+
+      if (!submission) {
+        return res.status(404).send({ error: "Submission not found" });
+      }
+      const { worker_email, buyer_email, buyer_name, title, amount } = submission;
       const filter = { _id: new ObjectId(id) };
       const updatedDoc = {
         $set: {
@@ -373,6 +419,28 @@ app.patch('/users_coin/:id', verifyToken, async (req, res) => {
         filter,
         updatedDoc
       );
+
+    if (result.modifiedCount > 0) {
+      // Add a notification based on the new status
+      let message;
+      let actionRoute = "/dashboard/workerhome";
+
+      if (status === "approve") {
+        message = `You have earned ${amount} coins from ${buyer_name} for completing ${title}`;
+      } else if (status === "rejected") {
+        message = `Your submission for ${title} has been rejected by ${buyer_email}`;
+      }
+
+      const notification = {
+        message,
+        toEmail: worker_email,
+        actionRoute,
+        time: new Date(),
+      };
+
+      // Insert the notification into the notification collection
+      await notificationCollection.insertOne(notification);
+    }
       res.send(result);
     });
 
@@ -406,14 +474,36 @@ app.get("/submission/buyer",verifyToken,verifyBuyer, async (req, res) => {
 
 
 
-app.get("/submission/workeralltask",verifyToken,verifyWorker, async (req, res) => {
-  const email = req.query.email;
-  const query = {
-   worker_email: email,
-  };
-  const result = await submissionCollection.find(query).toArray();
-  res.send(result);
-    });
+app.get("/submission/workeralltask", verifyToken, verifyWorker, async (req, res) => {
+  try {
+    const email = req.query.email;
+    const page = parseInt(req.query.page) || 1; 
+    const limit = parseInt(req.query.limit) || 10; 
+    const skip = (page - 1) * limit; 
+    const query = { worker_email: email };
+
+    const totalSubmissions = await submissionCollection.countDocuments(query);
+
+   
+    const submissions = await submissionCollection
+      .find(query)
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    
+    res.send({
+      submissions,
+      totalSubmissions,
+      totalPages: Math.ceil(totalSubmissions / limit),
+      currentPage: page,
+    });
+  } catch (error) {
+    console.error("Error fetching submissions:", error);
+    res.status(500).send({ error: "Error fetching submissions" });
+  }
+});
+
 
 
 
@@ -527,6 +617,11 @@ app.post('/payments', async (req, res) => {
 });
 
 
+app.get('/allpayments' ,verifyToken,async(req , res) =>{ 
+  const result = await paymentsCollection.find().toArray()
+  res.send(result)
+})
+
 
 app.get("/payments", async (req, res) => {
   const email = req.query.email;
@@ -537,6 +632,182 @@ app.get("/payments", async (req, res) => {
   res.send(result);
 });
 
+
+// withdrawals
+
+app.post('/withdrawals' , async(req , res) =>{
+  const withdrawalData = req.body
+  const result = await withdrawalsCollection.insertOne(withdrawalData)
+  res.send(result)
+  
+  
+      })
+
+      app.get('/withdrawals', async (req, res) => {
+
+    const status = req.query.status || 'pending'; 
+    const withdrawals = await withdrawalsCollection.find({ status }).toArray();
+
+    res.send(withdrawals);
+ 
+});
+
+app.patch('/withdrawals/:id', async (req, res) => {
+  try {
+    const withdrawalId = req.params.id; 
+    const { status, withdrawalAmount, userEmail } = req.body; 
+    if (!status || !withdrawalAmount || !userEmail) {
+      return res.status(400).send({ message: "Status, withdrawal amount, and user email are required." });
+    }
+
+ 
+    const withdrawalUpdate = await withdrawalsCollection.updateOne(
+      { _id: new ObjectId(withdrawalId), status: 'pending' }, 
+      { $set: { status: 'approved' } }
+    );
+
+    if (withdrawalUpdate.modifiedCount === 0) {
+      return res.status(404).send({ message: "Withdrawal request not found or already approved." });
+    }
+
+
+    const user = await userCollection.findOne({ email: userEmail });
+    if (!user) {
+      return res.status(404).send({ message: "User not found." });
+    }
+
+    const currentCoins = user.coins || 0;
+    if (currentCoins < withdrawalAmount) {
+      return res.status(400).send({ message: "Insufficient coins for withdrawal." });
+    }
+
+    
+    const updatedCoins = parseInt(currentCoins - withdrawalAmount);
+    const userUpdate = await userCollection.updateOne(
+      { email: userEmail },
+      { $set: { coins: updatedCoins } }
+    );
+
+    if (userUpdate.modifiedCount === 0) {
+      return res.status(500).send({ message: "Failed to update user's coin balance." });
+    }
+
+ 
+    res.status(200).send({ message: "Withdrawal approved and user coins updated successfully." });
+  } catch (error) {
+    console.error("Error approving withdrawal request:", error);
+    res.status(500).send({ message: "Internal Server Error" });
+  }
+});
+
+
+// notifications get 
+
+app.get('/notifications',verifyToken, async(req,res)=>{
+const { toEmail } = req.query;
+ if (!toEmail) {
+      return res.status(400).send({ error: "toEmail query parameter is required" });
+    }
+
+   const notifications = await notificationCollection
+      .find({ toEmail })
+      .sort({ time: -1 })
+      .toArray();
+
+    res.send(notifications);
+})
+
+
+// app.patch("/submission/status/:id", verifyToken, verifyBuyer, async (req, res) => {
+//   const submissionId = req.params.id;
+//   const { status } = req.body;
+
+//   try {
+//     const submission = await submissionCollection.findOne({ _id: submissionId });
+
+//     if (!submission) {
+//       return res.status(404).send({ error: "Submission not found" });
+//     }
+
+//     const updateResult = await submissionCollection.updateOne(
+//       { _id: submissionId },
+//       { $set: { status } }
+//     );
+
+//     // Add notification if status changes
+//     if (status === "approved" || status === "rejected") {
+//       const notification = {
+//         message: `Your submission for ${submission.title} has been ${status} by ${submission.buyer_name}.`,
+//         toEmail: submission.worker_email,
+//         actionRoute: "/dashboard/worker-home",
+//         time: new Date(),
+//       };
+
+//       await notificationCollection.insertOne(notification);
+//     }
+
+//     res.send(updateResult);
+//   } catch (error) {
+//     console.error("Error updating submission status:", error);
+//     res.status(500).send({ error: "Error updating submission status" });
+//   }
+// });
+
+
+// app.patch("/withdrawals/:id", verifyToken, verifyAdmin, async (req, res) => {
+//   const withdrawalId = req.params.id;
+//   const { status, withdrawalAmount, userEmail } = req.body;
+
+//   try {
+//     const updateResult = await withdrawalsCollection.updateOne(
+//       { _id: withdrawalId },
+//       { $set: { status } }
+//     );
+
+//     if (status === "approved") {
+//       const notification = {
+//         message: `Your withdrawal request of $${withdrawalAmount} has been approved.`,
+//         toEmail: userEmail,
+//         actionRoute: "/dashboard/worker-home",
+//         time: new Date(),
+//       };
+
+//       await notificationCollection.insertOne(notification);
+//     }
+
+//     res.send(updateResult);
+//   } catch (error) {
+//     console.error("Error approving withdrawal request:", error);
+//     res.status(500).send({ error: "Error approving withdrawal request" });
+//   }
+// });
+
+
+
+// app.post("/submission", verifyToken, verifyWorker, async (req, res) => {
+//   const submission = req.body;
+
+//   try {
+//     const insertResult = await submissionCollection.insertOne(submission);
+
+//     const notification = {
+//       message: `A new submission titled "${submission.title}" has been sent by ${submission.worker_name}.`,
+//       toEmail: submission.buyer_email,
+//       actionRoute: "/dashboard/buyer-home",
+//       time: new Date(),
+//     };
+
+//     await notificationCollection.insertOne(notification);
+
+//     res.send(insertResult);
+//   } catch (error) {
+//     console.error("Error inserting submission:", error);
+//     res.status(500).send({ error: "Error inserting submission" });
+//   }
+// });
+
+ 
+      
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
