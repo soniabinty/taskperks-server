@@ -225,6 +225,27 @@ app.patch('/allusers/:id',verifyToken,verifyAdmin, async (req, res) => {
  
 });
 
+app.get('/top-workers', async(req,res)=>{
+  const result = await userCollection.find({ role: 'Worker' })
+  .sort({ coins: -1 })
+  .limit(6)
+  .toArray();
+
+res.send(result)
+
+})
+
+app.post("/users/check-email", async (req, res) => {
+  const { email } = req.body;
+  const userExists = await userCollection.findOne({ email });
+  if (userExists) {
+    res.send({ exists: true });
+  } else {
+    res.send({ exists: false });
+  }
+});
+
+
 
   // task added apis
 
@@ -294,7 +315,7 @@ app.post('/submission' , async(req , res) =>{
     let actionRoute = "/dashboard/buyerhome";
 
    
-      message = `Inserted a new submission by ${worker_name}`;
+     const message = `Inserted a new submission by ${worker_name}`;
   
 
     const notification = {
@@ -647,7 +668,6 @@ app.post('/withdrawals' , async(req , res) =>{
 
     const status = req.query.status || 'pending'; 
     const withdrawals = await withdrawalsCollection.find({ status }).toArray();
-
     res.send(withdrawals);
  
 });
@@ -655,10 +675,11 @@ app.post('/withdrawals' , async(req , res) =>{
 app.patch('/withdrawals/:id', async (req, res) => {
   try {
     const withdrawalId = req.params.id; 
-    const { status, withdrawalAmount, userEmail } = req.body; 
-    if (!status || !withdrawalAmount || !userEmail) {
-      return res.status(400).send({ message: "Status, withdrawal amount, and user email are required." });
-    }
+    const { status, withdrawal_amount,withdrawal_coin, worker_email } = req.body; 
+    
+    // if (!status || !withdrawalAmount || !userEmail) {
+    //   return res.status(400).send({ message: "Status, withdrawal amount, and user email are required." });
+    // }
 
  
     const withdrawalUpdate = await withdrawalsCollection.updateOne(
@@ -671,25 +692,44 @@ app.patch('/withdrawals/:id', async (req, res) => {
     }
 
 
-    const user = await userCollection.findOne({ email: userEmail });
+    const user = await userCollection.findOne({ email: worker_email });
     if (!user) {
       return res.status(404).send({ message: "User not found." });
     }
 
     const currentCoins = user.coins || 0;
-    if (currentCoins < withdrawalAmount) {
+    if (currentCoins < withdrawal_coin) {
       return res.status(400).send({ message: "Insufficient coins for withdrawal." });
     }
 
     
-    const updatedCoins = parseInt(currentCoins - withdrawalAmount);
+    const updatedCoins = parseInt(currentCoins - withdrawal_coin);
     const userUpdate = await userCollection.updateOne(
-      { email: userEmail },
+      { email: worker_email },
       { $set: { coins: updatedCoins } }
     );
+   
 
     if (userUpdate.modifiedCount === 0) {
       return res.status(500).send({ message: "Failed to update user's coin balance." });
+    }
+    if (withdrawalUpdate.modifiedCount > 0) {
+      // Add a notification based on the new status
+      
+      let actionRoute = "/dashboard/buyerhome";
+
+     
+       const message = `Approving withdwawal request ${withdrawal_amount} dollar`;
+      
+      const notification = {
+        message,
+        toEmail: worker_email,
+        actionRoute,
+        time: new Date(),
+      };
+
+      // Insert the notification into the notification collection
+      await notificationCollection.insertOne(notification);
     }
 
  
