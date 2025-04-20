@@ -235,6 +235,13 @@ res.send(result)
 
 })
 
+
+  app.get('/new', async(req, res) =>{
+        const cursor=taskCollection.find().sort({createdAt: -1}).limit(4)
+        const result = await cursor.toArray()
+        res.send(result)
+       })
+
 app.post("/users/check-email", async (req, res) => {
   const { email } = req.body;
   const userExists = await userCollection.findOne({ email });
